@@ -99,7 +99,8 @@
         let currentActivityLabel = '';
         let lapData = [];
 
-        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxH8Acl2qkNIAckH-E2HswJ1Uwl19qsKkCwNgOLqdV04Hu9rMDaAvHnvlR1VS1qPn4vgw/exec'
+        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxH8Acl2qkNIAckH-E2HswJ1Uwl19qsKkCwNgOLqdV04Hu9rMDaAvHnvlR1VS1qPn4vgw/exec'; // *** REPLACE THIS WITH YOUR DEPLOYED SCRIPT URL ***
+
         const display = document.getElementById('display');
         const currentLapDisplay = document.getElementById('currentLapDisplay');
         const startStopBtn = document.getElementById('startStopBtn');
@@ -240,15 +241,7 @@
         }
 
         function sendDataToGoogleSheet() {
-            if (lapData.length === 0) {
-                const messageBox = document.createElement('div');
-                messageBox.className = 'fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-xl shadow-lg';
-                messageBox.innerHTML = '<strong>Error:</strong> No lap data to export.';
-                document.body.appendChild(messageBox);
-                setTimeout(() => messageBox.remove(), 3000);
-                return;
-            }
-
+            // No need for a lapData.length === 0 check here, as the final lap is recorded first
             fetch(SCRIPT_URL, {
                 method: 'POST',
                 mode: 'no-cors',
@@ -273,18 +266,51 @@
                 setTimeout(() => messageBox.remove(), 5000);
             });
         }
-
-        // New function to handle the "End Observation" logic
-        function endObservation() {
-            // Stop the stopwatch first
+        
+        // NEW: Function to handle the final lap before ending the observation
+        function recordFinalLap() {
+            // Only record the final lap if the stopwatch is currently running
             if (running) {
-                stopStopwatch();
+                lapNumber++;
+                const now = new Date();
+                const lapStartTime = startTime + lastLapTime;
+                const lapEndTime = now.getTime();
+                const lapDuration = lapEndTime - lapStartTime;
+
+                lapData.push({
+                    number: lapNumber,
+                    label: currentActivityLabel,
+                    duration: lapDuration,
+                    startTime: new Date(lapStartTime).toLocaleString(),
+                    endTime: new Date(lapEndTime).toLocaleString()
+                });
+
+                let lapHours = Math.floor((lapDuration % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                let lapMinutes = Math.floor((lapDuration % (1000 * 60 * 60)) / (1000 * 60));
+                let lapSeconds = Math.floor((lapDuration % (1000 * 60)) / 1000);
+
+                lapHours = (lapHours < 10) ? '0' + lapHours : lapHours;
+                lapMinutes = (lapMinutes < 10) ? '0' + lapMinutes : lapMinutes;
+                lapSeconds = (lapSeconds < 10) ? '0' + lapSeconds : lapSeconds;
+
+                const lapTimeFormatted = lapHours + ':' + lapMinutes + ':' + lapSeconds;
+                
+                const li = document.createElement('li');
+                li.className = 'flex justify-between items-center bg-gray-100 p-4 rounded-xl border border-gray-200';
+                li.innerHTML = `<span class="text-xl font-bold text-gray-700">Lap ${lapNumber}: ${currentActivityLabel}</span><span class="text-lg text-gray-600">Duration: ${lapTimeFormatted} (Total: ${display.innerHTML})</span>`;
+                lapsList.appendChild(li);
             }
-            
-            // Send the data to Google Sheet
+        }
+
+        // Updated function to handle the "End Observation" logic
+        function endObservation() {
+            // First, record the final lap before doing anything else
+            recordFinalLap();
+
+            // Then, send the entire data set to Google Sheet
             sendDataToGoogleSheet();
             
-            // After sending, perform the reset
+            // Finally, perform the reset
             resetStopwatch();
         }
 
