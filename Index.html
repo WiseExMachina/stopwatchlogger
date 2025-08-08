@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stopwatch App</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+        }
+        /* Custom styles for the modal overlay and content */
+        .modal-overlay {
+            background-color: rgba(0, 0, 0, 0.5);
+            transition: opacity 0.3s ease-in-out;
+            z-index: 50;
+        }
+        .modal-content {
+            z-index: 60;
+        }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-center min-h-screen text-gray-800">
+
+    <!-- Main Container for the entire app -->
+    <div class="bg-white p-8 rounded-2xl shadow-xl max-w-lg w-full text-center">
+
+        <h1 class="text-4xl font-bold mb-6 text-gray-900">Stopwatch</h1>
+
+        <!-- Timer Display -->
+        <div id="display" class="text-7xl font-mono my-8 p-4 bg-gray-100 rounded-xl border-2 border-gray-200">
+            00:00:00
+        </div>
+
+        <!-- Current Lap Time Display -->
+        <div class="mb-4">
+            <h3 class="text-lg font-bold text-gray-700">Current Lap:</h3>
+            <div id="currentLapDisplay" class="text-4xl font-mono text-gray-600">
+                00:00:00
+            </div>
+        </div>
+
+        <!-- Control Buttons -->
+        <div class="flex flex-wrap justify-center space-x-2 space-y-2 sm:space-x-4 sm:space-y-0 mb-8">
+            <button id="startStopBtn" class="bg-green-500 hover:bg-green-600 text-white font-semibold py-3 px-8 rounded-full shadow-lg transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-green-300">
+                Start Observation
+            </button>
+            <button id="lapBtn" class="bg-yellow-500 hover:bg-yellow-600 text-white font-semibold py-3 px-8 rounded-full shadow-lg transition-all duration-300 transform hover:scale-105 disabled:bg-gray-400 disabled:shadow-none focus:outline-none focus:ring-4 focus:ring-yellow-300" disabled>
+                Lap
+            </button>
+            <button id="resetBtn" class="bg-red-500 hover:bg-red-600 text-white font-semibold py-3 px-8 rounded-full shadow-lg transition-all duration-300 transform hover:scale-105 disabled:bg-gray-400 disabled:shadow-none focus:outline-none focus:ring-4 focus:ring-red-300" disabled>
+                End Observation
+            </button>
+        </div>
+
+        <!-- Lap Times Section -->
+        <div id="lapContainer" class="mt-8 text-left max-h-60 overflow-y-auto">
+            <h2 class="text-2xl font-bold mb-4 text-gray-900">Laps</h2>
+            <ul id="laps" class="space-y-2">
+                <!-- Lap times will be inserted here dynamically by the JavaScript -->
+            </ul>
+        </div>
+    </div>
+
+    <!-- Custom Modal for Lap Description (hidden by default) -->
+    <div id="lapModal" class="hidden fixed inset-0 flex items-center justify-center modal-overlay transition-opacity">
+        <div class="bg-white p-6 rounded-xl shadow-2xl modal-content max-w-sm w-full mx-4">
+            <h3 id="modalTitle" class="text-2xl font-bold mb-4 text-gray-900">Select First Lap Label</h3>
+            <!-- Buttons for predefined labels -->
+            <div class="flex flex-col space-y-3">
+                <button id="label1Btn" class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 rounded-full transition-all duration-300">
+                    Looking for rides
+                </button>
+                <button id="label2Btn" class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 rounded-full transition-all duration-300">
+                    Driving to Pickup
+                </button>
+                <button id="label3Btn" class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 rounded-full transition-all duration-300">
+                    Actual Ride
+                </button>
+            </div>
+            <div class="mt-4 flex justify-end">
+                <button id="cancelLapBtn" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-2 px-4 rounded-full transition-all duration-300">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let startTime;
+        let updatedTime;
+        let difference;
+        let tInterval;
+        let running = false;
+        let lapNumber = 0;
+        let lastLapTime = 0;
+        let currentActivityLabel = '';
+        let lapData = [];
+
+        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzRKiNiVn1Ctk0F3hJSidP5RmD17DH0CsjKpLuEHcw0aI62Jw7RFFWgECMdHKxEqg-05Q/exec'; // *** REPLACE THIS WITH YOUR DEPLOYED SCRIPT URL ***
+
+        const display = document.getElementById('display');
+        const currentLapDisplay = document.getElementById('currentLapDisplay');
+        const startStopBtn = document.getElementById('startStopBtn');
+        const lapBtn = document.getElementById('lapBtn');
+        const resetBtn = document.getElementById('resetBtn'); // This is now the "End Observation" button
+        const lapsList = document.getElementById('laps');
+
+        // Modal elements
+        const lapModal = document.getElementById('lapModal');
+        const modalTitle = document.getElementById('modalTitle');
+        const cancelLapBtn = document.getElementById('cancelLapBtn');
+        const label1Btn = document.getElementById('label1Btn');
+        const label2Btn = document.getElementById('label2Btn');
+        const label3Btn = document.getElementById('label3Btn');
+        
+        function startStopwatch() {
+            if (!running) {
+                modalTitle.textContent = 'Select First Lap Label';
+                showLapModal();
+            } else {
+                // If it's already running, this button will stop it
+                stopStopwatch();
+            }
+        }
+
+        function stopStopwatch() {
+            clearInterval(tInterval);
+            running = false;
+            startStopBtn.innerHTML = 'Start Observation';
+            startStopBtn.classList.remove('bg-red-500', 'hover:bg-red-600', 'focus:ring-red-300');
+            startStopBtn.classList.add('bg-green-500', 'hover:bg-green-600', 'focus:ring-green-300');
+        }
+
+        // The reset function, now only called by the End Observation button.
+        function resetStopwatch() {
+            clearInterval(tInterval);
+            running = false;
+            startStopBtn.innerHTML = 'Start Observation';
+            startStopBtn.classList.remove('bg-red-500', 'hover:bg-red-600', 'focus:ring-red-300');
+            startStopBtn.classList.add('bg-green-500', 'hover:bg-green-600', 'focus:ring-green-300');
+            
+            display.innerHTML = '00:00:00';
+            currentLapDisplay.innerHTML = '00:00:00';
+            lapBtn.disabled = true;
+            resetBtn.disabled = true;
+            lapsList.innerHTML = '';
+            lapNumber = 0;
+            lastLapTime = 0;
+            difference = 0;
+            currentActivityLabel = '';
+            lapData = [];
+        }
+
+        function getShowTime() {
+            updatedTime = new Date().getTime();
+            difference = updatedTime - startTime;
+
+            let hours = Math.floor((difference % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+            let minutes = Math.floor((difference % (1000 * 60 * 60)) / (1000 * 60));
+            let seconds = Math.floor((difference % (1000 * 60)) / 1000);
+            
+            hours = (hours < 10) ? '0' + hours : hours;
+            minutes = (minutes < 10) ? '0' + minutes : minutes;
+            seconds = (seconds < 10) ? '0' + seconds : seconds;
+            
+            display.innerHTML = hours + ':' + minutes + ':' + seconds;
+
+            const currentLapDuration = updatedTime - (startTime + lastLapTime);
+            let lapHours = Math.floor((currentLapDuration % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+            let lapMinutes = Math.floor((currentLapDuration % (1000 * 60 * 60)) / (1000 * 60));
+            let lapSeconds = Math.floor((currentLapDuration % (1000 * 60)) / 1000);
+
+            lapHours = (lapHours < 10) ? '0' + lapHours : lapHours;
+            lapMinutes = (lapMinutes < 10) ? '0' + lapMinutes : lapMinutes;
+            lapSeconds = (lapSeconds < 10) ? '0' + lapSeconds : lapSeconds;
+
+            currentLapDisplay.innerHTML = lapHours + ':' + lapMinutes + ':' + lapSeconds;
+        }
+
+        function showLapModal() {
+            lapModal.classList.remove('hidden');
+        }
+
+        function hideLapModal() {
+            lapModal.classList.add('hidden');
+        }
+
+        function recordLap(nextLabel) {
+            const now = new Date();
+            if (!running) {
+                currentActivityLabel = nextLabel;
+                startTime = now.getTime();
+                tInterval = setInterval(getShowTime, 1);
+                running = true;
+                startStopBtn.innerHTML = 'Stop Observation';
+                startStopBtn.classList.remove('bg-green-500', 'hover:bg-green-600', 'focus:ring-green-300');
+                startStopBtn.classList.add('bg-red-500', 'hover:bg-red-600', 'focus:ring-red-300');
+                
+                lapBtn.disabled = false;
+                resetBtn.disabled = false;
+                lastLapTime = 0;
+                currentLapDisplay.innerHTML = '00:00:00';
+            } else {
+                lapNumber++;
+                
+                const lapStartTime = startTime + lastLapTime;
+                const lapEndTime = now.getTime();
+                const lapDuration = lapEndTime - lapStartTime;
+
+                lapData.push({
+                    number: lapNumber,
+                    label: currentActivityLabel,
+                    duration: lapDuration,
+                    startTime: new Date(lapStartTime).toLocaleString(),
+                    endTime: new Date(lapEndTime).toLocaleString()
+                });
+
+                let lapHours = Math.floor((lapDuration % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                let lapMinutes = Math.floor((lapDuration % (1000 * 60 * 60)) / (1000 * 60));
+                let lapSeconds = Math.floor((lapDuration % (1000 * 60)) / 1000);
+
+                lapHours = (lapHours < 10) ? '0' + lapHours : lapHours;
+                lapMinutes = (lapMinutes < 10) ? '0' + lapMinutes : lapMinutes;
+                lapSeconds = (lapSeconds < 10) ? '0' + lapSeconds : lapSeconds;
+
+                const lapTimeFormatted = lapHours + ':' + lapMinutes + ':' + lapSeconds;
+                
+                const li = document.createElement('li');
+                li.className = 'flex justify-between items-center bg-gray-100 p-4 rounded-xl border border-gray-200';
+                li.innerHTML = `<span class="text-xl font-bold text-gray-700">Lap ${lapNumber}: ${currentActivityLabel}</span><span class="text-lg text-gray-600">Duration: ${lapTimeFormatted} (Total: ${display.innerHTML})</span>`;
+                lapsList.appendChild(li);
+                
+                lastLapTime = new Date().getTime() - startTime;
+                currentActivityLabel = nextLabel;
+                currentLapDisplay.innerHTML = '00:00:00';
+            }
+            hideLapModal();
+        }
+
+        function sendDataToGoogleSheet() {
+            if (lapData.length === 0) {
+                const messageBox = document.createElement('div');
+                messageBox.className = 'fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-xl shadow-lg';
+                messageBox.innerHTML = '<strong>Error:</strong> No lap data to export.';
+                document.body.appendChild(messageBox);
+                setTimeout(() => messageBox.remove(), 3000);
+                return;
+            }
+
+            fetch(SCRIPT_URL, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(lapData),
+            })
+            .then(response => {
+                const messageBox = document.createElement('div');
+                messageBox.className = 'fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded-xl shadow-lg';
+                messageBox.innerHTML = '<strong>Success!</strong> Data sent to Google Sheet.';
+                document.body.appendChild(messageBox);
+                setTimeout(() => messageBox.remove(), 3000);
+            })
+            .catch(error => {
+                console.error('Error sending data:', error);
+                const messageBox = document.createElement('div');
+                messageBox.className = 'fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-xl shadow-lg';
+                messageBox.innerHTML = `<strong>Error:</strong> Failed to send data. Check your script URL.`;
+                document.body.appendChild(messageBox);
+                setTimeout(() => messageBox.remove(), 5000);
+            });
+        }
+
+        // New function to handle the "End Observation" logic
+        function endObservation() {
+            // Stop the stopwatch first
+            if (running) {
+                stopStopwatch();
+            }
+            
+            // Send the data to Google Sheet
+            sendDataToGoogleSheet();
+            
+            // After sending, perform the reset
+            resetStopwatch();
+        }
+
+        startStopBtn.addEventListener('click', startStopwatch);
+        lapBtn.addEventListener('click', () => {
+            if (running) {
+                modalTitle.textContent = 'What will you do next?';
+                showLapModal();
+            }
+        });
+        resetBtn.addEventListener('click', endObservation);
+
+        label1Btn.addEventListener('click', () => recordLap('Looking for rides'));
+        label2Btn.addEventListener('click', () => recordLap('Driving to Pickup'));
+        label3Btn.addEventListener('click', () => recordLap('Actual Ride'));
+        cancelLapBtn.addEventListener('click', hideLapModal);
+    </script>
+</body>
+</html>
